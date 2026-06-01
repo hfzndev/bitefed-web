@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="id" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bite Fed — Asisten Nutrisi Pintar di Telegram</title>
+    <meta name="description" content="Pantau kalori, log makanan, dan dapatkan insight nutrisi harian — langsung dari Telegram.">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>🥗</text></svg>">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://app.sandbox.midtrans.com/snap/snap.js" data-client-key="{{ midtrans_client_key }}"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdfa', 100: '#ccfbf1', 200: '#99f6e4', 300: '#5eead4',
+                            400: '#2dd4bf', 500: '#14b8a6', 600: '#0d9488', 700: '#0f766e',
+                            800: '#115e59', 900: '#134e4a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-white text-gray-800 font-sans antialiased">
+
+<!-- Hero -->
+<header class="hero-gradient text-white">
+    <nav class="max-w-6xl mx-auto px-4 py-5 flex items-center justify-between">
+        <div class="flex items-center gap-2 text-xl font-bold tracking-tight">
+            <span class="text-2xl">🥗</span> Bite Fed
+        </div>
+        <a href="#pricing" class="text-white/80 hover:text-white text-sm font-medium transition">Harga ↓</a>
+    </nav>
+
+    <div class="max-w-6xl mx-auto px-4 py-20 md:py-28 text-center fade-in">
+        <span class="inline-flex items-center gap-1.5 bg-white/15 backdrop-blur rounded-full px-4 py-1.5 text-sm mb-6">
+            <span class="pulse-dot w-2 h-2 bg-green-300 rounded-full inline-block"></span>
+            Sekarang di Telegram
+        </span>
+        <h1 class="text-4xl md:text-6xl font-extrabold leading-tight mb-5">
+            Nutrisi Harian,<br class="md:hidden"> <span class="text-green-200">Lebih Mudah</span>
+        </h1>
+        <p class="text-lg md:text-xl text-white/80 max-w-xl mx-auto mb-8">
+            Log makanan via chat, foto, atau suara — AI kami hitung kalori, lacak olahraga,
+            dan beri insight harian. Semua dari Telegram.
+        </p>
+        <div class="flex flex-col sm:flex-row gap-3 justify-center">
+            <a href="#pricing"
+               class="bg-white text-brand-700 font-semibold px-7 py-3 rounded-xl hover:bg-green-50 transition shadow-lg">
+                Mulai Gratis
+            </a>
+            <a href="https://t.me/{{ bot_username }}" target="_blank"
+               class="border border-white/30 text-white font-medium px-7 py-3 rounded-xl hover:bg-white/10 transition">
+                Coba di Telegram →
+            </a>
+        </div>
+    </div>
+</header>
+
+<!-- Fitur -->
+<section class="max-w-6xl mx-auto px-4 py-20">
+    <h2 class="text-3xl md:text-4xl font-bold text-center mb-4">Kenapa Bite Fed?</h2>
+    <p class="text-gray-500 text-center mb-14 max-w-lg mx-auto">Gak perlu install app baru. Semua fitur ada di Telegram.</p>
+
+    <div class="grid md:grid-cols-3 gap-6">
+        <div class="text-center p-8 rounded-2xl border border-gray-100 hover:border-brand-200 transition card-hover">
+            <div class="text-4xl mb-4">📸</div>
+            <h3 class="font-bold text-lg mb-2">Foto → Kalori</h3>
+            <p class="text-gray-500 text-sm">Kirim foto makanan, AI langsung estimasi kalori dan nutrisi.</p>
+        </div>
+        <div class="text-center p-8 rounded-2xl border border-gray-100 hover:border-brand-200 transition card-hover">
+            <div class="text-4xl mb-4">📊</div>
+            <h3 class="font-bold text-lg mb-2">Insight Harian</h3>
+            <p class="text-gray-500 text-sm">Ringkasan harian, statistik mingguan, dan feedback personal.</p>
+        </div>
+        <div class="text-center p-8 rounded-2xl border border-gray-100 hover:border-brand-200 transition card-hover">
+            <div class="text-4xl mb-4">🔔</div>
+            <h3 class="font-bold text-lg mb-2">Reminder Otomatis</h3>
+            <p class="text-gray-500 text-sm">Pengingat makan, olahraga, dan check-in mingguan.</p>
+        </div>
+    </div>
+</section>
+
+<!-- Pricing -->
+<section id="pricing" class="max-w-6xl mx-auto px-4 py-20">
+    <h2 class="text-3xl md:text-4xl font-bold text-center mb-4">Pilih Paket</h2>
+    <p class="text-gray-500 text-center mb-14">Mulai gratis, lanjut kalau cocok.</p>
+
+    <div class="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+        {% for plan_key, plan in plans.items() %}
+        <div class="rounded-2xl border-2 {{ plan.card_class }} p-8 text-center card-hover{% if plan_key == 'monthly' %} relative{% endif %}">
+            <div class="text-sm font-semibold {{ plan.badge_class }} rounded-full px-3 py-1 inline-block mb-4">{{ plan.badge }}</div>
+            <div class="text-3xl font-extrabold {% if plan_key == 'trial' %}text-brand-800{% else %}text-gray-800{% endif %} mb-1">{{ plan.price_display }}</div>
+            <div class="text-gray-500 text-sm mb-6">{{ plan.period }}</div>
+            <ul class="text-sm text-gray-600 space-y-2 mb-6 text-left">
+                {% for feature in plan.features %}
+                <li class="flex gap-2"><span class="text-brand-500">✓</span> {{ feature }}</li>
+                {% endfor %}
+            </ul>
+            <button onclick="openForm('{{ plan_key }}')"
+                    class="w-full bg-brand-600 text-white font-semibold py-3 rounded-xl hover:bg-brand-700 transition">
+                {{ plan.cta }}
+            </button>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<!-- Order Form Modal -->
+<div id="orderModal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center">
+    <div class="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl fade-in">
+        <h3 class="text-xl font-bold mb-6">Daftar Sekarang</h3>
+        <form id="orderForm" onsubmit="handleSubmit(event)" class="space-y-4">
+            <input type="hidden" id="planType" value="">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Telegram ID</label>
+                <input type="number" id="telegramId" required placeholder="Contoh: 123456789"
+                       class="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-brand-400 focus:border-brand-400 outline-none transition">
+                <p class="text-xs text-gray-400 mt-1.5">Bisa dicek dengan /start di bot Telegram kamu</p>
+            </div>
+            <button type="submit"
+                    class="w-full bg-brand-600 text-white font-semibold py-3 rounded-xl hover:bg-brand-700 transition">
+                Buat Order
+            </button>
+        </form>
+        <div id="orderResult" class="hidden mt-4 p-4 bg-brand-50 rounded-xl border border-brand-200">
+            <p class="text-sm font-semibold text-brand-800" id="orderTitle">✅ Order berhasil!</p>
+            <p class="text-xs text-brand-600 mt-1" id="orderMessage"></p>
+            <p class="text-xs text-gray-500 mt-2" id="orderFooter"></p>
+        </div>
+        <button onclick="closeModal()" class="mt-4 text-sm text-gray-400 hover:text-gray-600 transition block w-full text-center">
+            Tutup
+        </button>
+    </div>
+</div>
+
+<!-- Footer -->
+<footer class="text-center py-10 text-sm text-gray-400 border-t border-gray-100">
+    <p>Bite Fed © 2026 · Dibuat dengan 🥗 di Telegram</p>
+    <a href="https://t.me/{{ bot_username }}" target="_blank" class="text-brand-600 hover:text-brand-700">@{{ bot_username }}</a>
+</footer>
+
+<script>
+function openForm(plan) {
+    document.getElementById('planType').value = plan;
+    document.getElementById('orderResult').classList.add('hidden');
+    document.getElementById('orderForm').reset();
+    document.getElementById('orderModal').classList.remove('hidden');
+    document.getElementById('orderModal').classList.add('flex');
+}
+
+function closeModal() {
+    document.getElementById('orderModal').classList.add('hidden');
+    document.getElementById('orderModal').classList.remove('flex');
+}
+
+async function handleSubmit(e) {
+    e.preventDefault();
+    const planType = document.getElementById('planType').value;
+    const telegramId = document.getElementById('telegramId').value;
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = 'Memproses...';
+
+    try {
+        const res = await fetch('/api/order/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ telegram_id: parseInt(telegramId), plan_type: planType })
+        });
+        const data = await res.json();
+
+        const result = document.getElementById('orderResult');
+        const title = document.getElementById('orderTitle');
+        const message = document.getElementById('orderMessage');
+        const footer = document.getElementById('orderFooter');
+        result.classList.remove('hidden');
+
+        if (data.snap_token) {
+            // Paid plan → trigger Midtrans Snap
+            title.textContent = '💳 Selesaikan Pembayaran';
+            message.textContent = `Order: ${data.order_code} — Rp ${data.amount.toLocaleString('id-ID')}`;
+            footer.textContent = 'Popup pembayaran akan muncul...';
+            btn.textContent = 'Buka Pembayaran';
+            btn.disabled = false;
+
+            window.snap.pay(data.snap_token, {
+                onSuccess: function(res) {
+                    title.textContent = '✅ Pembayaran Berhasil!';
+                    message.textContent = `Order ${data.order_code} — langganan aktif.`;
+                    footer.innerHTML = 'Silakan buka <a href="https://t.me/{{ bot_username }}" target="_blank" class="text-brand-600 font-semibold">@{{ bot_username }}</a> di Telegram.';
+                    btn.style.display = 'none';
+                },
+                onPending: function(res) {
+                    title.textContent = '⏳ Menunggu Pembayaran';
+                    message.textContent = 'Pembayaran sedang diproses. Cek status nanti.';
+                    footer.textContent = '';
+                },
+                onError: function(res) {
+                    title.textContent = '❌ Pembayaran Gagal';
+                    message.textContent = 'Silakan coba lagi atau pilih metode lain.';
+                    btn.textContent = 'Coba Lagi';
+                    btn.disabled = false;
+                },
+                onClose: function() {
+                    if (!document.getElementById('orderResult').querySelector('.text-green-800')) {
+                        title.textContent = '⚠️ Pembayaran Dibatalkan';
+                        message.textContent = 'Popup ditutup sebelum pembayaran selesai.';
+                        btn.textContent = 'Coba Lagi';
+                        btn.disabled = false;
+                    }
+                }
+            });
+        } else {
+            // Trial (free) → langsung aktif
+            title.textContent = '🎉 Trial Aktif!';
+            message.textContent = data.message;
+            footer.innerHTML = 'Langsung buka <a href="https://t.me/{{ bot_username }}" target="_blank" class="text-brand-600 font-semibold">@{{ bot_username }}</a> di Telegram.';
+            btn.style.display = 'none';
+        }
+    } catch (err) {
+        alert('Gagal membuat order. Coba lagi.');
+        btn.textContent = 'Buat Order';
+        btn.disabled = false;
+    }
+}
+
+// Close modal on background click
+document.getElementById('orderModal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+});
+</script>
+
+</body>
+</html>
