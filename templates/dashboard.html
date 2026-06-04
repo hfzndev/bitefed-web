@@ -4,11 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard — Bite Fed</title>
+    <meta name="description" content="Dashboard nutrisi dan langganan Bite Fed">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/static/style.css">
+    {% if midtrans_client_key and midtrans_client_key != 'None' %}
+    <script src="https://app.sandbox.midtrans.com/snap/snap.js" data-client-key="{{ midtrans_client_key }}"></script>
+    {% endif %}
     <script>
         tailwind.config = {
             theme: {
@@ -44,47 +48,190 @@
         </a>
         <div class="flex items-center gap-6 text-sm text-text-secondary">
             <a href="/dashboard" class="text-accent">Dashboard</a>
-            <a href="https://t.me/{{ bot_username }}" target="_blank" class="hover:text-text-primary transition-colors">Buka Bot →</a>
+            <a href="https://t.me/{{ bot_username }}" target="_blank" class="hover:text-text-primary transition-colors">Buka Bot</a>
+            <a href="/logout" class="hover:text-red-400 transition-colors">Keluar</a>
         </div>
     </div>
 </nav>
 
-<!-- Dashboard Content -->
 <main class="pt-24 pb-16 max-w-4xl mx-auto px-6">
-    <div class="mb-10">
-        <h1 class="text-3xl font-bold mb-2">Dashboard</h1>
-        <p class="text-text-secondary">Telegram ID: <code class="text-accent">{{ telegram_id }}</code></p>
+
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold mb-1">Dashboard</h1>
+        <p class="text-text-secondary text-sm">Telegram ID: <code class="text-accent">{{ telegram_id }}</code></p>
     </div>
 
-    <!-- Stats Grid -->
-    <div class="grid md:grid-cols-3 gap-4 mb-10">
-        <div class="bg-card border border-border rounded-2xl p-6">
-            <p class="text-xs text-text-muted uppercase tracking-wide mb-2">Subscription</p>
-            <p class="text-2xl font-bold text-accent">Active</p>
+    <!-- Subscription Card -->
+    <div class="bg-card border {% if subscription.active %}border-accent/30{% else %}border-border{% endif %} rounded-2xl p-6 mb-6">
+        <div class="flex items-center justify-between mb-3">
+            <p class="text-xs text-text-muted uppercase tracking-wide">Langganan</p>
+            <span class="text-xs px-2.5 py-0.5 rounded-full font-medium
+                {% if subscription.active %}bg-accent/10 text-accent{% else %}bg-red-500/10 text-red-400{% endif %}">
+                {{ 'Aktif' if subscription.active else 'Tidak Aktif' }}
+            </span>
         </div>
-        <div class="bg-card border border-border rounded-2xl p-6">
-            <p class="text-xs text-text-muted uppercase tracking-wide mb-2">Kalori Hari Ini</p>
-            <p class="text-2xl font-bold">—</p>
+        <div class="grid md:grid-cols-3 gap-4">
+            <div>
+                <p class="text-xs text-text-muted mb-1">Plan</p>
+                <p class="text-lg font-semibold">{{ subscription.plan_label or '—' }}</p>
+            </div>
+            <div>
+                <p class="text-xs text-text-muted mb-1">Sisa Hari</p>
+                <p class="text-lg font-semibold {% if subscription.days_left <= 3 and subscription.active %}text-yellow-400{% endif %}">
+                    {{ subscription.days_left }} hari
+                </p>
+            </div>
+            <div>
+                <p class="text-xs text-text-muted mb-1">Kadaluarsa</p>
+                <p class="text-lg font-semibold">
+                    {% if subscription.expires %}
+                    {{ subscription.expires[:10] }}
+                    {% else %}—{% endif %}
+                </p>
+            </div>
         </div>
-        <div class="bg-card border border-border rounded-2xl p-6">
-            <p class="text-xs text-text-muted uppercase tracking-wide mb-2">Streak</p>
-            <p class="text-2xl font-bold">—</p>
+        {% if not subscription.active %}
+        <div class="mt-4 pt-4 border-t border-border/30">
+            <a href="/#pricing" class="text-sm text-accent hover:underline">🔓 Aktifkan langganan →</a>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Nutrition Today -->
+    <div class="grid md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-card border border-border rounded-2xl p-5 text-center">
+            <p class="text-xs text-text-muted uppercase tracking-wide mb-2">Kalori</p>
+            <p class="text-2xl font-bold">{{ nutrition.calories|int }}</p>
+            <p class="text-xs text-text-muted mt-1">kcal</p>
+        </div>
+        <div class="bg-card border border-border rounded-2xl p-5 text-center">
+            <p class="text-xs text-text-muted uppercase tracking-wide mb-2">Protein</p>
+            <p class="text-2xl font-bold">{{ "%.0f"|format(nutrition.protein|float) }}</p>
+            <p class="text-xs text-text-muted mt-1">gram</p>
+        </div>
+        <div class="bg-card border border-border rounded-2xl p-5 text-center">
+            <p class="text-xs text-text-muted uppercase tracking-wide mb-2">Karbo</p>
+            <p class="text-2xl font-bold">{{ "%.0f"|format(nutrition.carbs|float) }}</p>
+            <p class="text-xs text-text-muted mt-1">gram</p>
+        </div>
+        <div class="bg-card border border-border rounded-2xl p-5 text-center">
+            <p class="text-xs text-text-muted uppercase tracking-wide mb-2">Lemak</p>
+            <p class="text-2xl font-bold">{{ "%.0f"|format(nutrition.fat|float) }}</p>
+            <p class="text-xs text-text-muted mt-1">gram</p>
         </div>
     </div>
 
-    <!-- Quick Actions -->
-    <div class="bg-card border border-border rounded-2xl p-8 text-center">
-        <div class="text-4xl mb-4">📊</div>
-        <h2 class="text-xl font-semibold mb-2">Insight & history coming soon</h2>
-        <p class="text-text-secondary mb-6">Dashboard lengkap dengan grafik nutrisi, riwayat makan, dan tren mingguan sedang dikembangkan.</p>
-        <a href="https://t.me/{{ bot_username }}" target="_blank"
-           class="inline-flex bg-accent text-black font-semibold px-6 py-3 rounded-xl hover:bg-accent-light transition">
-            Buka Bot Telegram →
-        </a>
+    <!-- Stats Row -->
+    <div class="grid md:grid-cols-3 gap-4 mb-8">
+        <div class="bg-card border border-border rounded-2xl p-5">
+            <p class="text-xs text-text-muted uppercase tracking-wide mb-1">Streak</p>
+            <p class="text-2xl font-bold">{{ stats.streak }} <span class="text-sm text-text-muted font-normal">hari</span></p>
+        </div>
+        <div class="bg-card border border-border rounded-2xl p-5">
+            <p class="text-xs text-text-muted uppercase tracking-wide mb-1">Total Log</p>
+            <p class="text-2xl font-bold">{{ stats.total_logs }} <span class="text-sm text-text-muted font-normal">makanan</span></p>
+        </div>
+        <div class="bg-card border border-border rounded-2xl p-5">
+            <p class="text-xs text-text-muted uppercase tracking-wide mb-1">Rata² Harian</p>
+            <p class="text-2xl font-bold">{{ stats.avg_daily }} <span class="text-sm text-text-muted font-normal">kcal</span></p>
+        </div>
     </div>
+
+    <!-- Order History -->
+    <div class="bg-card border border-border rounded-2xl p-6">
+        <h2 class="text-lg font-semibold mb-4">Riwayat Order</h2>
+
+        {% if orders %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-text-muted text-xs uppercase tracking-wide border-b border-border/30">
+                        <th class="text-left py-2 pr-4">Order</th>
+                        <th class="text-left py-2 pr-4">Plan</th>
+                        <th class="text-right py-2 pr-4">Jumlah</th>
+                        <th class="text-center py-2 pr-4">Status</th>
+                        <th class="text-right py-2"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr class="border-b border-border/20 last:border-0">
+                        <td class="py-3 pr-4 font-mono text-xs text-text-secondary">{{ order.order_code }}</td>
+                        <td class="py-3 pr-4">{{ order.plan_type }}</td>
+                        <td class="py-3 pr-4 text-right">
+                            {% if order.amount > 0 %}
+                            Rp {{ "{:,}".format(order.amount|int) }}
+                            {% else %}Gratis{% endif %}
+                        </td>
+                        <td class="py-3 pr-4 text-center">
+                            <span class="text-xs px-2 py-0.5 rounded-full font-medium
+                                {% if order.status == 'completed' %}bg-accent/10 text-accent
+                                {% elif order.status == 'pending' %}bg-yellow-500/10 text-yellow-400
+                                {% elif order.status == 'expired' %}bg-red-500/10 text-red-400
+                                {% else %}bg-text-muted/10 text-text-muted{% endif %}">
+                                {{ order.status }}
+                            </span>
+                        </td>
+                        <td class="py-3 text-right">
+                            {% if order.status == 'pending' and order.amount > 0 %}
+                            <button onclick="retryPayment('{{ order.order_code }}')"
+                                    class="text-xs bg-accent/10 text-accent px-3 py-1.5 rounded-lg hover:bg-accent/20 transition font-medium">
+                                Bayar
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-8">
+            <div class="text-4xl mb-3">📋</div>
+            <p class="text-text-secondary">Belum ada order.</p>
+            <a href="/#pricing" class="text-sm text-accent hover:underline mt-2 inline-block">Lihat paket langganan →</a>
+        </div>
+        {% endif %}
+    </div>
+
 </main>
 
 </div>
+
+<script>
+async function retryPayment(orderCode) {
+    {% if not midtrans_client_key or midtrans_client_key == 'None' %}
+    alert('Payment gateway belum dikonfigurasi.');
+    return;
+    {% endif %}
+
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '...';
+
+    try {
+        const res = await fetch(`/api/order/${orderCode}/retry`, { method: 'POST' });
+        const data = await res.json();
+
+        if (data.snap_token && window.snap) {
+            window.snap.pay(data.snap_token, {
+                onSuccess: function() { location.reload(); },
+                onPending: function() { alert('Menunggu pembayaran...'); location.reload(); },
+                onError: function() { alert('Pembayaran gagal. Coba lagi.'); },
+                onClose: function() { location.reload(); }
+            });
+        } else {
+            alert(data.message || 'Gagal memproses pembayaran.');
+        }
+    } catch (err) {
+        alert('Gagal menghubungi server.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Bayar';
+    }
+}
+</script>
 
 </body>
 </html>

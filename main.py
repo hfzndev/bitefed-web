@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from database import (
     init_all_tables, create_order, activate_subscription,
     store_otp, verify_otp,
+    get_subscription_status, get_today_nutrition, get_user_stats, get_order_history,
 )
 from models import CreateOrderRequest, RequestOtpRequest, VerifyOtpRequest, PLAN_CONFIG
 from midtrans_client import create_snap_token, verify_webhook, CLIENT_KEY
@@ -52,11 +53,22 @@ def get_session_telegram_id(request: Request) -> int | None:
 
 def login_required(f):
     """Decorator: redirect to landing if not authenticated."""
-    @wraps(f)
-    async def wrapper(request: Request, *args, **kwargs):
-        if get_session_telegram_id(request) is None:
-            return RedirectResponse("/?auth=required", status_code=302)
-        return await f(request, *args, **kwargs)
+    import inspect
+    is_async = inspect.iscoroutinefunction(f)
+
+    if is_async:
+        @wraps(f)
+        async def wrapper(request: Request, *args, **kwargs):
+            if get_session_telegram_id(request) is None:
+                return RedirectResponse("/?auth=required", status_code=302)
+            return await f(request, *args, **kwargs)
+    else:
+        @wraps(f)
+        def wrapper(request: Request, *args, **kwargs):
+            if get_session_telegram_id(request) is None:
+                return RedirectResponse("/?auth=required", status_code=302)
+            return f(request, *args, **kwargs)
+
     return wrapper
 
 
@@ -187,11 +199,60 @@ def api_verify_otp(data: VerifyOtpRequest):
 @login_required
 def dashboard_page(request: Request):
     telegram_id = get_session_telegram_id(request)
+    sub = get_subscription_status(telegram_id)
+    nutrition = get_today_nutrition(telegram_id)
+    stats = get_user_stats(telegram_id)
+    orders = get_order_history(telegram_id)
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "telegram_id": telegram_id,
         "bot_username": os.getenv("BOT_USERNAME", "normGizi_bot"),
+        "subscription": sub,
+        "nutrition": nutrition,
+        "stats": stats,
+        "orders": orders,
+        "midtrans_client_key": CLIENT_KEY,
     })
+
+
+# ── Payment retry ─────────────────────────────────
+
+@app.post("/api/order/{order_code}/retry")
+def api_retry_payment(order_code: str, request: Request):
+    """Retry payment for a pending order — regenerate Snap token."""
+    telegram_id = get_session_telegram_id(request)
+    if not telegram_id:
+        raise HTTPException(status_code=401)
+
+    order = get_order(order_code)
+    if not order or order.get("telegram_id") != telegram_id:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if order["status"] not in ("pending",):
+        return {"status": "error", "message": "Order sudah diproses"}
+
+    plan_type = order["plan_type"]
+    amount = order["amount"]
+    plan_label = PLAN_CONFIG.get(plan_type, {}).get("label", plan_type)
+
+    try:
+        snap = create_snap_token(order_code, plan_label, amount, telegram_id)
+        return {
+            "status": "ok",
+            "snap_token": snap["snap_token"],
+            "redirect_url": snap["redirect_url"],
+        }
+    except Exception:
+        return {"status": "error", "message": "Payment gateway belum tersedia"}
+
+
+# ── Logout ────────────────────────────────────────
+
+@app.get("/logout")
+def logout():
+    resp = RedirectResponse("/", status_code=302)
+    resp.delete_cookie("bitefed_session")
+    return resp
 
 
 # ── Deploy webhook ─────────────────────────────────

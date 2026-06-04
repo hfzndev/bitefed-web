@@ -224,3 +224,105 @@ def verify_otp(telegram_id: int, code: str) -> bool:
     conn.commit()
     conn.close()
     return True
+
+
+# ── Dashboard queries ────────────────────────────────────────
+
+
+def get_subscription_status(telegram_id: int) -> dict:
+    """Get subscription info from users table (bot-managed)."""
+    conn = get_db()
+    user = conn.execute(
+        "SELECT is_active, access_type, access_expires_at, trial_used FROM users WHERE telegram_id = ?",
+        (telegram_id,),
+    ).fetchone()
+    conn.close()
+
+    if not user:
+        return {"active": False, "plan": None, "expires": None, "days_left": 0, "trial_used": False}
+
+    days_left = 0
+    if user["access_expires_at"]:
+        now = datetime.utcnow() + timedelta(hours=7)
+        try:
+            expires = datetime.fromisoformat(user["access_expires_at"])
+            days_left = max(0, (expires - now).days)
+        except (ValueError, TypeError):
+            pass
+
+    plan_label = {"temp": "Trial", "permanent": "Berbayar"}.get(user["access_type"], "Unknown")
+
+    return {
+        "active": bool(user["is_active"]),
+        "plan": user["access_type"],
+        "plan_label": plan_label,
+        "expires": user["access_expires_at"],
+        "days_left": days_left,
+        "trial_used": bool(user["trial_used"]),
+    }
+
+
+def get_today_nutrition(telegram_id: int) -> dict:
+    """Get today's total macros from food_log (WIB timezone)."""
+    conn = get_db()
+    row = conn.execute("""
+        SELECT COALESCE(SUM(calories), 0) as calories,
+               COALESCE(SUM(protein_g), 0) as protein,
+               COALESCE(SUM(carbs_g), 0) as carbs,
+               COALESCE(SUM(fat_g), 0) as fat,
+               COUNT(*) as total_logs
+        FROM food_log
+        WHERE telegram_id = ?
+          AND date(logged_at, '+7 hours') = date('now', '+7 hours')
+    """, (telegram_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else {"calories": 0, "protein": 0, "carbs": 0, "fat": 0, "total_logs": 0}
+
+
+def get_user_stats(telegram_id: int) -> dict:
+    """Get streak, total logs, and daily average calories."""
+    conn = get_db()
+
+    streak = conn.execute(
+        "SELECT COUNT(DISTINCT date(logged_at, '+7 hours')) as streak_days FROM food_log WHERE telegram_id = ?",
+        (telegram_id,),
+    ).fetchone()
+
+    total = conn.execute(
+        "SELECT COUNT(*) as total FROM food_log WHERE telegram_id = ?",
+        (telegram_id,),
+    ).fetchone()
+
+    avg = conn.execute("""
+        SELECT ROUND(AVG(daily_cal), 0) as avg_daily
+        FROM (
+            SELECT date(logged_at, '+7 hours') as d, SUM(calories) as daily_cal
+            FROM food_log
+            WHERE telegram_id = ?
+              AND logged_at > datetime('now', '-30 days', '+7 hours')
+            GROUP BY d
+        )
+    """, (telegram_id,)).fetchone()
+
+    conn.close()
+    return {
+        "streak": streak["streak_days"] if streak else 0,
+        "total_logs": total["total"] if total else 0,
+        "avg_daily": int(avg["avg_daily"]) if avg and avg["avg_daily"] else 0,
+    }
+
+
+def get_order_history(telegram_id: int) -> list[dict]:
+    """Get all orders from subscription_payments, newest first."""
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT telegram_payment_charge_id as order_code,
+                  plan_type, amount, currency, status,
+                  created_at, completed_at
+           FROM subscription_payments
+           WHERE telegram_id = ?
+           ORDER BY created_at DESC""",
+        (telegram_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
