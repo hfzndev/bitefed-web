@@ -13,6 +13,7 @@ from database import (
     init_all_tables, create_order, activate_subscription,
     store_otp, verify_otp,
     get_subscription_status, get_today_nutrition, get_user_stats, get_order_history,
+    create_db_session, get_session_telegram_id, delete_session,
 )
 from models import CreateOrderRequest, RequestOtpRequest, VerifyOtpRequest, PLAN_CONFIG
 from midtrans_client import create_snap_token, verify_webhook, CLIENT_KEY
@@ -34,21 +35,20 @@ ADMIN_GROUP_ID = int(os.getenv("ADMIN_GROUP_ID", "0"))
 REGISTER_TOPIC_ID = int(os.getenv("REGISTER_TOPIC_ID", "0"))
 DEPLOY_SECRET = os.getenv("DEPLOY_SECRET", secrets.token_urlsafe(32))
 
-# ── Session store (in-memory, resets on restart) ──
-_sessions: dict[str, int] = {}  # token → telegram_id
+app = FastAPI(title="Bite Fed Web", version="2.5.0")
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
 
-def create_session(telegram_id: int) -> str:
-    """Create a new session token for a verified user."""
-    token = secrets.token_urlsafe(32)
-    _sessions[token] = telegram_id
-    return token
+# ── Session helpers (DB-backed, survives restarts) ──
 
-
-def get_session_telegram_id(request: Request) -> int | None:
-    """Extract telegram_id from session cookie, or None."""
+def get_current_user(request: Request) -> int | None:
+    """Extract telegram_id from session cookie (DB query)."""
     token = request.cookies.get("bitefed_session")
-    return _sessions.get(token)
+    if not token:
+        return None
+    return get_session_telegram_id(token)
 
 
 def login_required(f):
@@ -59,23 +59,27 @@ def login_required(f):
     if is_async:
         @wraps(f)
         async def wrapper(request: Request, *args, **kwargs):
-            if get_session_telegram_id(request) is None:
+            if get_current_user(request) is None:
                 return RedirectResponse("/?auth=required", status_code=302)
             return await f(request, *args, **kwargs)
     else:
         @wraps(f)
         def wrapper(request: Request, *args, **kwargs):
-            if get_session_telegram_id(request) is None:
+            if get_current_user(request) is None:
                 return RedirectResponse("/?auth=required", status_code=302)
             return f(request, *args, **kwargs)
 
     return wrapper
 
 
-app = FastAPI(title="Bite Fed Web", version="2.3.0")
+# ── Middleware: inject user state into every request ──
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Attach telegram_id to request.state for all routes."""
+    request.state.telegram_id = get_current_user(request)
+    response = await call_next(request)
+    return response
 
 
 @app.on_event("startup")
@@ -147,6 +151,7 @@ def landing_page(request: Request):
         "plans": PLAN_CONFIG,
         "midtrans_client_key": CLIENT_KEY,
         "bot_username": os.getenv("BOT_USERNAME", "normGizi_bot"),
+        "user": request.state.telegram_id,
     })
 
 
@@ -176,15 +181,19 @@ async def api_request_otp(data: RequestOtpRequest):
 
 
 @app.post("/api/verify-otp")
-def api_verify_otp(data: VerifyOtpRequest):
-    """Verify the OTP entered by the user. Sets session cookie on success."""
+def api_verify_otp(data: VerifyOtpRequest, request: Request):
+    """Verify the OTP. Sets session cookie and returns redirect URL."""
     if verify_otp(data.telegram_id, data.otp):
-        token = create_session(data.telegram_id)
-        resp = JSONResponse({"status": "ok", "verified": True, "message": "OTP valid"})
+        token = create_db_session(data.telegram_id)
+        resp = JSONResponse({
+            "status": "ok", "verified": True,
+            "message": "OTP valid",
+            "redirect": "/dashboard",
+        })
         resp.set_cookie(
             key="bitefed_session", value=token,
             httponly=True, secure=True, samesite="lax",
-            max_age=86400 * 7,  # 7 days
+            max_age=86400 * 7,
         )
         return resp
     return JSONResponse(
@@ -198,7 +207,7 @@ def api_verify_otp(data: VerifyOtpRequest):
 @app.get("/dashboard", response_class=HTMLResponse)
 @login_required
 def dashboard_page(request: Request):
-    telegram_id = get_session_telegram_id(request)
+    telegram_id = request.state.telegram_id
     sub = get_subscription_status(telegram_id)
     nutrition = get_today_nutrition(telegram_id)
     stats = get_user_stats(telegram_id)
@@ -220,7 +229,7 @@ def dashboard_page(request: Request):
 @app.post("/api/order/{order_code}/retry")
 def api_retry_payment(order_code: str, request: Request):
     """Retry payment for a pending order — regenerate Snap token."""
-    telegram_id = get_session_telegram_id(request)
+    telegram_id = request.state.telegram_id
     if not telegram_id:
         raise HTTPException(status_code=401)
 
@@ -249,7 +258,10 @@ def api_retry_payment(order_code: str, request: Request):
 # ── Logout ────────────────────────────────────────
 
 @app.get("/logout")
-def logout():
+def logout(request: Request):
+    token = request.cookies.get("bitefed_session", "")
+    if token:
+        delete_session(token)
     resp = RedirectResponse("/", status_code=302)
     resp.delete_cookie("bitefed_session")
     return resp

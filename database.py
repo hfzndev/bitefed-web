@@ -40,6 +40,14 @@ def init_all_tables():
             used          INTEGER DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_otp_telegram ON otp_codes(telegram_id);
+
+        CREATE TABLE IF NOT EXISTS sessions (
+            token         TEXT PRIMARY KEY,
+            telegram_id   INTEGER NOT NULL,
+            created_at    TEXT DEFAULT (datetime('now', '+7 hours')),
+            expires_at    TEXT DEFAULT (datetime('now', '+7 days', '+7 hours'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_sessions_telegram ON sessions(telegram_id);
     """)
     conn.commit()
     conn.close()
@@ -326,3 +334,41 @@ def get_order_history(telegram_id: int) -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ── Session management (SQLite-backed) ─────────────────────
+
+
+def create_db_session(telegram_id: int) -> str:
+    """Create a persistent session token, returns the token string."""
+    import secrets
+    token = secrets.token_urlsafe(32)
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO sessions (token, telegram_id) VALUES (?, ?)",
+        (token, telegram_id),
+    )
+    conn.commit()
+    conn.close()
+    return token
+
+
+def get_session_telegram_id(token: str) -> int | None:
+    """Look up a session token, returns telegram_id or None."""
+    if not token:
+        return None
+    conn = get_db()
+    row = conn.execute(
+        "SELECT telegram_id FROM sessions WHERE token = ? AND expires_at > datetime('now', '+7 hours')",
+        (token,),
+    ).fetchone()
+    conn.close()
+    return row["telegram_id"] if row else None
+
+
+def delete_session(token: str) -> None:
+    """Delete a session (logout)."""
+    conn = get_db()
+    conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+    conn.commit()
+    conn.close()

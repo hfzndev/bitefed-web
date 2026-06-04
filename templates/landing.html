@@ -60,10 +60,15 @@
         <div class="flex items-center gap-6 text-sm text-text-secondary">
             <a href="#features" class="hover:text-text-primary transition-colors">Fitur</a>
             <a href="#pricing" class="hover:text-text-primary transition-colors">Harga</a>
+            {% if user %}
+            <a href="/dashboard" class="text-accent font-medium">Dashboard</a>
+            <a href="/logout" class="hover:text-red-400 transition-colors">Keluar</a>
+            {% else %}
             <a href="https://t.me/{{ bot_username }}" target="_blank" rel="noopener"
                class="bg-accent/10 text-accent px-4 py-2 rounded-xl hover:bg-accent/20 transition-colors text-xs font-medium">
                 Buka Bot →
             </a>
+            {% endif %}
         </div>
     </div>
 </nav>
@@ -314,7 +319,7 @@ async function verifyOtp() {
         const data = await res.json();
 
         if (data.verified) {
-            // OTP ok → create order
+            // OTP ok → create order for selected plan
             document.getElementById('step2').classList.add('hidden');
             document.getElementById('modalTitle').textContent = 'Memproses...';
             await createOrder(telegramId, currentPlan);
@@ -357,7 +362,7 @@ async function createOrder(telegramId, planType) {
                 onSuccess: function(res) {
                     title.textContent = '✅ Pembayaran Berhasil!';
                     message.textContent = `Order ${data.order_code} — langganan aktif.`;
-                    footer.innerHTML = 'Buka <a href="/dashboard" class="text-accent font-semibold hover:underline">Dashboard</a> atau <a href="https://t.me/{{ bot_username }}" target="_blank" class="text-accent font-semibold hover:underline">@{{ bot_username }}</a>.';
+                    footer.innerHTML = '<a href="/dashboard" class="text-accent font-semibold hover:underline">Buka Dashboard →</a>';
                 },
                 onPending: function(res) {
                     title.textContent = '⏳ Menunggu Pembayaran';
@@ -377,7 +382,7 @@ async function createOrder(telegramId, planType) {
         } else {
             title.textContent = data.status === 'active' ? '🎉 Trial Aktif!' : '📋 Order Tersimpan';
             message.textContent = data.message;
-            footer.innerHTML = 'Buka <a href="https://t.me/{{ bot_username }}" target="_blank" class="text-accent font-semibold hover:underline">@{{ bot_username }}</a> di Telegram.';
+            footer.innerHTML = '<a href="/dashboard" class="text-accent font-semibold hover:underline">Buka Dashboard →</a>';
         }
     } catch (err) {
         title.textContent = '❌ Gagal';
