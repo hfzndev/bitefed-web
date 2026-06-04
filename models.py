@@ -6,6 +6,15 @@ class CreateOrderRequest(BaseModel):
     plan_type: str = Field(..., pattern=r"^(trial|monthly|yearly)$")
 
 
+class RequestOtpRequest(BaseModel):
+    telegram_id: int = Field(..., gt=0, description="Telegram user ID to send OTP to")
+
+
+class VerifyOtpRequest(BaseModel):
+    telegram_id: int = Field(..., gt=0, description="Telegram user ID")
+    otp: str = Field(..., min_length=6, max_length=6, description="6-digit OTP code")
+
+
 class CreateOrderResponse(BaseModel):
     order_code: str
     plan_type: str

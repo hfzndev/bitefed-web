@@ -1,5 +1,7 @@
 venv/
+.venv/
 __pycache__/
 *.pyc
-web.log
 .env
+*.log
+web.log

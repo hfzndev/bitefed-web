@@ -1,0 +1,14 @@
+[Unit]
+Description=Bite Fed Web - FastAPI
+After=network.target
+
+[Service]
+User=hfzndev
+WorkingDirectory=/home/hfzndev/normgizi-web
+ExecStart=/home/hfzndev/normgizi-web/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8888
+Restart=always
+RestartSec=5
+EnvironmentFile=/home/hfzndev/normgizi-web/.env
+
+[Install]
+WantedBy=multi-user.target

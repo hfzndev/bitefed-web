@@ -1,12 +1,22 @@
-"""Database connection — shared SQLite with nutrition-bot."""
+"""Database connection — shared SQLite with nutrition-bot.
+
+Now writes directly to the same `subscription_payments` table that the bot uses,
+so there is a single source of truth for payment tracking.
+"""
 import sqlite3
 import os
+from datetime import datetime, timedelta
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "nutrition-bot", "data", "nutrition.db")
 DB_PATH = os.path.abspath(DB_PATH)
 
+# ── Plan config (mirrors bot's Database.PLAN_DURATIONS) ──────────
+DURATIONS = {"trial": 3, "monthly": 30, "yearly": 365}
+PLAN_PRICES = {"trial": 0, "monthly": 25000, "yearly": 250000}
+
 
 def get_db() -> sqlite3.Connection:
+    """Return a connection to the shared SQLite database."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -14,31 +24,22 @@ def get_db() -> sqlite3.Connection:
 
 
 def init_all_tables():
-    """Create all tables if not exist."""
+    """Ensure the shared tables exist.
+
+    The main tables (users, subscription_payments, etc.) are created by
+    nutrition-bot's schema.py / db.py. Here we only add tables that are
+    specific to the web front-end (OTP verification).
+    """
     conn = get_db()
     conn.executescript("""
-        CREATE TABLE IF NOT EXISTS orders (
+        CREATE TABLE IF NOT EXISTS otp_codes (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            order_code    TEXT UNIQUE NOT NULL,
             telegram_id   INTEGER NOT NULL,
-            plan_type     TEXT CHECK(plan_type IN ('trial','monthly','yearly')) NOT NULL,
-            amount        INTEGER NOT NULL,
-            status        TEXT DEFAULT 'pending' CHECK(status IN ('pending','paid','expired','cancelled')),
-            created_at    TEXT DEFAULT (datetime('now')),
-            paid_at       TEXT
+            code          TEXT NOT NULL,
+            created_at    TEXT DEFAULT (datetime('now', '+7 hours')),
+            used          INTEGER DEFAULT 0
         );
-        CREATE INDEX IF NOT EXISTS idx_orders_code ON orders(order_code);
-        CREATE INDEX IF NOT EXISTS idx_orders_telegram ON orders(telegram_id);
-
-        CREATE TABLE IF NOT EXISTS subscriptions (
-            telegram_id   INTEGER PRIMARY KEY,
-            plan_type     TEXT CHECK(plan_type IN ('trial','monthly','yearly')) NOT NULL,
-            status        TEXT DEFAULT 'active' CHECK(status IN ('active','expired','cancelled')),
-            started_at    TEXT DEFAULT (datetime('now')),
-            expires_at    TEXT NOT NULL,
-            trial_used    INTEGER DEFAULT 0,
-            created_at    TEXT DEFAULT (datetime('now'))
-        );
+        CREATE INDEX IF NOT EXISTS idx_otp_telegram ON otp_codes(telegram_id);
     """)
     conn.commit()
     conn.close()
@@ -48,14 +49,24 @@ def init_all_tables():
 init_orders_table = init_all_tables
 
 
+# ── Payment tracking (unified with bot's subscription_payments) ──
+
+
 def create_order(telegram_id: int, plan_type: str, amount: int) -> str:
-    """Create a new order, returns order_code."""
+    """Create a new order by writing directly to subscription_payments.
+
+    Returns the generated order_code (also stored as telegram_payment_charge_id).
+    """
     import secrets
     code = f"BITE-{secrets.token_hex(3).upper()}"
+
     conn = get_db()
     conn.execute(
-        "INSERT INTO orders (order_code, telegram_id, plan_type, amount) VALUES (?, ?, ?, ?)",
-        (code, telegram_id, plan_type, amount),
+        """INSERT INTO subscription_payments
+           (telegram_id, plan_type, amount, currency,
+            telegram_payment_charge_id, provider_payment_charge_id, status)
+           VALUES (?, ?, ?, 'IDR', ?, 'midtrans', 'pending')""",
+        (telegram_id, plan_type, amount, code),
     )
     conn.commit()
     conn.close()
@@ -63,61 +74,153 @@ def create_order(telegram_id: int, plan_type: str, amount: int) -> str:
 
 
 def get_order(order_code: str) -> dict | None:
+    """Look up a payment by its order code (stored in telegram_payment_charge_id)."""
     conn = get_db()
-    row = conn.execute("SELECT * FROM orders WHERE order_code = ?", (order_code,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM subscription_payments WHERE telegram_payment_charge_id = ?",
+        (order_code,),
+    ).fetchone()
     conn.close()
     return dict(row) if row else None
 
 
-DURATIONS = {"trial": 3, "monthly": 30, "yearly": 365}
-
-
 def activate_subscription(order_code: str) -> dict | None:
-    """Activate subscription after payment. Returns subscription info or None."""
+    """Activate a subscription after successful Midtrans payment.
+
+    1. Marks the subscription_payments row as 'completed'.
+    2. Grants user access in the users table (mirrors bot's grant_access logic).
+    """
     conn = get_db()
 
-    # Get order
-    order = conn.execute(
-        "SELECT * FROM orders WHERE order_code = ? AND status = 'pending'",
+    # Get payment row
+    payment = conn.execute(
+        """SELECT * FROM subscription_payments
+           WHERE telegram_payment_charge_id = ? AND status = 'pending'""",
         (order_code,),
     ).fetchone()
 
-    if not order:
+    if not payment:
         conn.close()
         return None
 
-    # Mark order as paid
+    telegram_id = payment["telegram_id"]
+    plan_type = payment["plan_type"]
+    days = DURATIONS.get(plan_type, 30)
+
+    # Prevent duplicate trial activation (allow webhook replay for paid plans)
+    if plan_type == "trial":
+        existing = conn.execute(
+            "SELECT trial_used FROM users WHERE telegram_id = ?",
+            (telegram_id,),
+        ).fetchone()
+        if existing and existing["trial_used"]:
+            # Trial already used — still mark payment completed but don't re-grant
+            conn.execute(
+                """UPDATE subscription_payments SET
+                   status = 'completed',
+                   completed_at = datetime('now', '+7 hours')
+                   WHERE telegram_payment_charge_id = ?""",
+                (order_code,),
+            )
+            conn.commit()
+            sub = conn.execute(
+                "SELECT * FROM subscription_payments WHERE telegram_payment_charge_id = ?",
+                (order_code,),
+            ).fetchone()
+            conn.close()
+            return dict(sub)
+
+    # Calculate expiry — same logic as bot's mark_payment_completed
+    now_wib = datetime.utcnow() + timedelta(hours=7)
+    expires_at = (now_wib + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    # Mark payment as completed
     conn.execute(
-        "UPDATE orders SET status = 'paid', paid_at = datetime('now') WHERE order_code = ?",
+        """UPDATE subscription_payments SET
+           status = 'completed',
+           completed_at = datetime('now', '+7 hours')
+           WHERE telegram_payment_charge_id = ?""",
         (order_code,),
     )
 
-    # Calculate expiry
-    days = DURATIONS[order["plan_type"]]
+    # Grant access in users table (same as bot's Database.grant_access for non-trial)
+    # Ensure user record exists (might not if they haven't /start the bot yet)
+    conn.execute(
+        "INSERT OR IGNORE INTO users (telegram_id) VALUES (?)",
+        (telegram_id,),
+    )
 
-    # Insert or update subscription
-    conn.execute("""
-        INSERT INTO subscriptions (telegram_id, plan_type, status, expires_at)
-        VALUES (?, ?, 'active', datetime('now', '+' || ? || ' days'))
-        ON CONFLICT(telegram_id) DO UPDATE SET
-            plan_type = excluded.plan_type,
-            status = 'active',
-            started_at = datetime('now'),
-            expires_at = datetime('now', '+' || ? || ' days')
-    """, (order["telegram_id"], order["plan_type"], days, days))
-
-    # Also update user in nutrition-bot users table (if exists)
-    conn.execute("""
-        UPDATE users SET is_active = 1, access_type = 'permanent'
-        WHERE telegram_id = ?
-    """, (order["telegram_id"],))
+    if plan_type == "trial":
+        conn.execute(
+            """UPDATE users SET
+               is_active = 1,
+               access_type = 'temp',
+               access_expires_at = ?,
+               trial_used = 1,
+               updated_at = datetime('now', '+7 hours')
+               WHERE telegram_id = ?""",
+            (expires_at, telegram_id),
+        )
+    else:
+        conn.execute(
+            """UPDATE users SET
+               is_active = 1,
+               access_type = 'permanent',
+               access_expires_at = ?,
+               updated_at = datetime('now', '+7 hours')
+               WHERE telegram_id = ?""",
+            (expires_at, telegram_id),
+        )
 
     conn.commit()
 
+    # Return subscription info
     sub = conn.execute(
-        "SELECT * FROM subscriptions WHERE telegram_id = ?",
-        (order["telegram_id"],),
+        """SELECT * FROM subscription_payments
+           WHERE telegram_payment_charge_id = ?""",
+        (order_code,),
     ).fetchone()
     conn.close()
 
-    return dict(sub)
+    return dict(sub) if sub else None
+
+
+# ── OTP verification ──────────────────────────────────────────
+
+
+def store_otp(telegram_id: int, code: str):
+    """Store a new OTP code. All previous OTPs for this user are left intact
+    but only the most recent unused one will be valid."""
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO otp_codes (telegram_id, code) VALUES (?, ?)",
+        (telegram_id, code),
+    )
+    conn.commit()
+    conn.close()
+
+
+def verify_otp(telegram_id: int, code: str) -> bool:
+    """Check if the OTP is valid (correct code, not expired, not yet used).
+
+    OTPs expire after 5 minutes.
+    """
+    conn = get_db()
+    row = conn.execute(
+        """SELECT id, code, created_at, used FROM otp_codes
+           WHERE telegram_id = ?
+             AND used = 0
+             AND datetime(created_at, '+5 minutes') > datetime('now', '+7 hours')
+           ORDER BY created_at DESC LIMIT 1""",
+        (telegram_id,),
+    ).fetchone()
+
+    if not row or row["code"] != code:
+        conn.close()
+        return False
+
+    # Mark as used
+    conn.execute("UPDATE otp_codes SET used = 1 WHERE id = ?", (row["id"],))
+    conn.commit()
+    conn.close()
+    return True

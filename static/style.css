@@ -1,25 +1,46 @@
-/* Custom styles — minimal, Tailwind handles most */
-.hero-gradient {
-    background: linear-gradient(135deg, #0f766e 0%, #14b8a6 50%, #2dd4bf 100%);
+/* ── Background effects ── */
+.bg-grid {
+    background-image:
+        linear-gradient(rgba(121,237,145,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(121,237,145,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
 }
-.card-hover {
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+.glow-top {
+    background: radial-gradient(60% 50% at 50% -20%, rgba(121,237,145,0.12), transparent);
 }
-.card-hover:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 20px 40px rgba(15, 118, 110, 0.15);
+
+.glow-bottom {
+    background: radial-gradient(50% 40% at 80% 90%, rgba(168,245,181,0.06), transparent);
 }
-.pulse-dot {
-    animation: pulse 2s infinite;
-}
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-}
+
+/* ── Animations ── */
 .fade-in {
-    animation: fadeIn 0.6s ease-out;
+    animation: fadeIn 0.4s ease-out;
 }
+
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(12px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Selection ── */
+::selection {
+    background: #79ed91;
+    color: #000;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+    width: 6px;
+}
+::-webkit-scrollbar-track {
+    background: #06061a;
+}
+::-webkit-scrollbar-thumb {
+    background: #1e3030;
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #698696;
 }
