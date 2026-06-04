@@ -4,8 +4,9 @@ import os
 import asyncio
 import secrets
 import requests
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from functools import wraps
+from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from database import (
@@ -30,8 +31,36 @@ except ImportError:
 BOT_TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN", "")
 ADMIN_GROUP_ID = int(os.getenv("ADMIN_GROUP_ID", "0"))
 REGISTER_TOPIC_ID = int(os.getenv("REGISTER_TOPIC_ID", "0"))
+DEPLOY_SECRET = os.getenv("DEPLOY_SECRET", secrets.token_urlsafe(32))
 
-app = FastAPI(title="Bite Fed Web", version="2.2.0")
+# ── Session store (in-memory, resets on restart) ──
+_sessions: dict[str, int] = {}  # token → telegram_id
+
+
+def create_session(telegram_id: int) -> str:
+    """Create a new session token for a verified user."""
+    token = secrets.token_urlsafe(32)
+    _sessions[token] = telegram_id
+    return token
+
+
+def get_session_telegram_id(request: Request) -> int | None:
+    """Extract telegram_id from session cookie, or None."""
+    token = request.cookies.get("bitefed_session")
+    return _sessions.get(token)
+
+
+def login_required(f):
+    """Decorator: redirect to landing if not authenticated."""
+    @wraps(f)
+    async def wrapper(request: Request, *args, **kwargs):
+        if get_session_telegram_id(request) is None:
+            return RedirectResponse("/?auth=required", status_code=302)
+        return await f(request, *args, **kwargs)
+    return wrapper
+
+
+app = FastAPI(title="Bite Fed Web", version="2.3.0")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
@@ -136,13 +165,59 @@ async def api_request_otp(data: RequestOtpRequest):
 
 @app.post("/api/verify-otp")
 def api_verify_otp(data: VerifyOtpRequest):
-    """Verify the OTP entered by the user."""
+    """Verify the OTP entered by the user. Sets session cookie on success."""
     if verify_otp(data.telegram_id, data.otp):
-        return {"status": "ok", "verified": True, "message": "OTP valid"}
+        token = create_session(data.telegram_id)
+        resp = JSONResponse({"status": "ok", "verified": True, "message": "OTP valid"})
+        resp.set_cookie(
+            key="bitefed_session", value=token,
+            httponly=True, secure=True, samesite="lax",
+            max_age=86400 * 7,  # 7 days
+        )
+        return resp
     return JSONResponse(
         status_code=400,
         content={"status": "error", "verified": False, "message": "OTP tidak valid atau sudah kadaluarsa"},
     )
+
+
+# ── Dashboard ──────────────────────────────────────
+
+@app.get("/dashboard", response_class=HTMLResponse)
+@login_required
+def dashboard_page(request: Request):
+    telegram_id = get_session_telegram_id(request)
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "telegram_id": telegram_id,
+        "bot_username": os.getenv("BOT_USERNAME", "normGizi_bot"),
+    })
+
+
+# ── Deploy webhook ─────────────────────────────────
+
+@app.post("/api/deploy")
+async def deploy_webhook(request: Request):
+    """GitHub-style deploy webhook. Pull + restart service."""
+    body = await request.body()
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    token = request.headers.get("X-Deploy-Token", "")
+    if not secrets.compare_digest(token, DEPLOY_SECRET):
+        raise HTTPException(status_code=403, detail="Invalid deploy token")
+
+    import subprocess
+    result = subprocess.run(
+        ["git", "-C", "/home/hfzndev/normgizi-web", "pull", "origin", "main"],
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode == 0:
+        subprocess.run(["sudo", "systemctl", "restart", "bitefed-web"], timeout=10)
+        return {"status": "deployed", "git": result.stdout.strip()}
+    return {"status": "error", "git": result.stderr.strip()}
 
 
 # ── Order API ──────────────────────────────────────

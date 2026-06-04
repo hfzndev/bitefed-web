@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard — Bite Fed</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        navy: { 950: '#06061a' },
+                        accent: { DEFAULT: '#79ed91', light: '#4dbe55', glow: '#a8f5b5' },
+                        text: { primary: '#bebebe', secondary: '#698696', muted: '#71776d' },
+                        border: { DEFAULT: '#1e3030' },
+                        card: { DEFAULT: '#0d1a1a' },
+                    },
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen bg-navy-950 font-sans antialiased text-text-primary">
+
+<div class="fixed inset-0 pointer-events-none z-0">
+    <div class="bg-grid absolute inset-0"></div>
+    <div class="glow-top absolute inset-0"></div>
+</div>
+
+<div class="relative z-10">
+
+<!-- Navbar -->
+<nav class="fixed top-0 inset-x-0 z-50 border-b border-border/30 bg-navy-950/80 backdrop-blur-xl">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+        <a href="/" class="flex items-center gap-2.5 group">
+            <span class="text-2xl">🥗</span>
+            <span class="font-semibold text-text-primary">Bite Fed</span>
+        </a>
+        <div class="flex items-center gap-6 text-sm text-text-secondary">
+            <a href="/dashboard" class="text-accent">Dashboard</a>
+            <a href="https://t.me/{{ bot_username }}" target="_blank" class="hover:text-text-primary transition-colors">Buka Bot →</a>
+        </div>
+    </div>
+</nav>
+
+<!-- Dashboard Content -->
+<main class="pt-24 pb-16 max-w-4xl mx-auto px-6">
+    <div class="mb-10">
+        <h1 class="text-3xl font-bold mb-2">Dashboard</h1>
+        <p class="text-text-secondary">Telegram ID: <code class="text-accent">{{ telegram_id }}</code></p>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid md:grid-cols-3 gap-4 mb-10">
+        <div class="bg-card border border-border rounded-2xl p-6">
+            <p class="text-xs text-text-muted uppercase tracking-wide mb-2">Subscription</p>
+            <p class="text-2xl font-bold text-accent">Active</p>
+        </div>
+        <div class="bg-card border border-border rounded-2xl p-6">
+            <p class="text-xs text-text-muted uppercase tracking-wide mb-2">Kalori Hari Ini</p>
+            <p class="text-2xl font-bold">—</p>
+        </div>
+        <div class="bg-card border border-border rounded-2xl p-6">
+            <p class="text-xs text-text-muted uppercase tracking-wide mb-2">Streak</p>
+            <p class="text-2xl font-bold">—</p>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="bg-card border border-border rounded-2xl p-8 text-center">
+        <div class="text-4xl mb-4">📊</div>
+        <h2 class="text-xl font-semibold mb-2">Insight & history coming soon</h2>
+        <p class="text-text-secondary mb-6">Dashboard lengkap dengan grafik nutrisi, riwayat makan, dan tren mingguan sedang dikembangkan.</p>
+        <a href="https://t.me/{{ bot_username }}" target="_blank"
+           class="inline-flex bg-accent text-black font-semibold px-6 py-3 rounded-xl hover:bg-accent-light transition">
+            Buka Bot Telegram →
+        </a>
+    </div>
+</main>
+
+</div>
+
+</body>
+</html>

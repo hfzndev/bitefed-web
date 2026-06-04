@@ -187,28 +187,52 @@
 
 </div>
 
-<!-- Order Form Modal -->
+<!-- Order Form Modal (2-step OTP) -->
 <div id="orderModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] hidden items-center justify-center">
     <div class="bg-card border border-border rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl fade-in">
-        <h3 class="text-xl font-bold mb-6">Daftar Sekarang</h3>
-        <form id="orderForm" onsubmit="handleSubmit(event)" class="space-y-4">
-            <input type="hidden" id="planType" value="">
-            <div>
-                <label class="block text-sm font-medium text-text-primary mb-1.5">Telegram ID</label>
+        <h3 class="text-xl font-bold mb-6" id="modalTitle">Verifikasi Telegram</h3>
+
+        <!-- Step 1: Telegram ID -->
+        <div id="step1">
+            <p class="text-text-secondary text-sm mb-4">Masukkan Telegram ID kamu. Kode OTP akan dikirim via bot.</p>
+            <div class="mb-4">
                 <input type="number" id="telegramId" required placeholder="Contoh: 123456789"
                        class="w-full bg-navy-950 border border-border rounded-xl px-4 py-3 text-text-primary placeholder:text-text-muted focus:ring-2 focus:ring-accent/50 focus:border-accent/50 outline-none transition">
-                <p class="text-xs text-text-muted mt-1.5">Bisa dicek dengan /start di bot Telegram kamu</p>
+                <p class="text-xs text-text-muted mt-1.5">Cek dengan /start di @{{ bot_username }}</p>
             </div>
-            <button type="submit"
+            <button onclick="requestOtp()"
                     class="w-full bg-accent text-black font-semibold py-3 rounded-xl hover:bg-accent-light transition-all duration-300 hover:-translate-y-0.5 active:scale-[0.98]">
-                Buat Order
+                Kirim Kode OTP
             </button>
-        </form>
+        </div>
+
+        <!-- Step 2: OTP -->
+        <div id="step2" class="hidden">
+            <p class="text-text-secondary text-sm mb-4">Kode verifikasi telah dikirim ke Telegram kamu. Cek chat bot!</p>
+            <div class="mb-4">
+                <input type="text" id="otpCode" required placeholder="000000" maxlength="6" inputmode="numeric"
+                       class="w-full bg-navy-950 border border-border rounded-xl px-4 py-3 text-text-primary text-center text-2xl tracking-widest placeholder:text-text-muted focus:ring-2 focus:ring-accent/50 focus:border-accent/50 outline-none transition">
+                <p class="text-xs text-text-muted mt-1.5" id="otpTimer">Kode berlaku 5 menit</p>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="verifyOtp()"
+                        class="flex-1 bg-accent text-black font-semibold py-3 rounded-xl hover:bg-accent-light transition-all duration-300 active:scale-[0.98]">
+                    Verifikasi
+                </button>
+                <button onclick="backToStep1()"
+                        class="px-4 border border-border text-text-secondary rounded-xl hover:border-accent/30 hover:text-text-primary transition text-sm">
+                    ← Ganti ID
+                </button>
+            </div>
+        </div>
+
+        <!-- Result -->
         <div id="orderResult" class="hidden mt-4 p-4 bg-accent/5 border border-accent/20 rounded-xl">
-            <p class="text-sm font-semibold text-accent" id="orderTitle">✅ Order berhasil!</p>
+            <p class="text-sm font-semibold text-accent" id="orderTitle"></p>
             <p class="text-xs text-text-secondary mt-1" id="orderMessage"></p>
             <p class="text-xs text-text-muted mt-2" id="orderFooter"></p>
         </div>
+
         <button onclick="closeModal()"
                 class="mt-4 text-sm text-text-muted hover:text-text-secondary transition w-full text-center">
             Tutup
@@ -217,10 +241,16 @@
 </div>
 
 <script>
+let currentPlan = '';
+
 function openForm(plan) {
-    document.getElementById('planType').value = plan;
+    currentPlan = plan;
+    document.getElementById('step1').classList.remove('hidden');
+    document.getElementById('step2').classList.add('hidden');
     document.getElementById('orderResult').classList.add('hidden');
-    document.getElementById('orderForm').reset();
+    document.getElementById('modalTitle').textContent = 'Verifikasi Telegram';
+    document.getElementById('telegramId').value = '';
+    document.getElementById('otpCode').value = '';
     document.getElementById('orderModal').classList.remove('hidden');
     document.getElementById('orderModal').classList.add('flex');
 }
@@ -230,13 +260,82 @@ function closeModal() {
     document.getElementById('orderModal').classList.remove('flex');
 }
 
-async function handleSubmit(e) {
-    e.preventDefault();
-    const planType = document.getElementById('planType').value;
+async function requestOtp() {
     const telegramId = document.getElementById('telegramId').value;
-    const btn = e.target.querySelector('button[type="submit"]');
+    if (!telegramId) return;
+
+    const btn = document.querySelector('#step1 button');
     btn.disabled = true;
-    btn.textContent = 'Memproses...';
+    btn.textContent = 'Mengirim...';
+
+    try {
+        const res = await fetch('/api/request-otp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ telegram_id: parseInt(telegramId) })
+        });
+        if (res.ok) {
+            document.getElementById('step1').classList.add('hidden');
+            document.getElementById('step2').classList.remove('hidden');
+            document.getElementById('modalTitle').textContent = 'Masukkan Kode OTP';
+            document.getElementById('otpCode').focus();
+        } else {
+            alert('Gagal mengirim OTP. Coba lagi.');
+        }
+    } catch (err) {
+        alert('Gagal menghubungi server. Coba lagi.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Kirim Kode OTP';
+    }
+}
+
+function backToStep1() {
+    document.getElementById('step2').classList.add('hidden');
+    document.getElementById('step1').classList.remove('hidden');
+    document.getElementById('modalTitle').textContent = 'Verifikasi Telegram';
+}
+
+async function verifyOtp() {
+    const telegramId = document.getElementById('telegramId').value;
+    const otp = document.getElementById('otpCode').value;
+    if (!otp || otp.length !== 6) return;
+
+    const btn = document.querySelector('#step2 button:first-child');
+    btn.disabled = true;
+    btn.textContent = 'Verifikasi...';
+
+    try {
+        const res = await fetch('/api/verify-otp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ telegram_id: parseInt(telegramId), otp: otp })
+        });
+        const data = await res.json();
+
+        if (data.verified) {
+            // OTP ok → create order
+            document.getElementById('step2').classList.add('hidden');
+            document.getElementById('modalTitle').textContent = 'Memproses...';
+            await createOrder(telegramId, currentPlan);
+        } else {
+            alert('OTP tidak valid atau kadaluarsa. Coba lagi.');
+            document.getElementById('otpCode').value = '';
+            document.getElementById('otpCode').focus();
+        }
+    } catch (err) {
+        alert('Verifikasi gagal. Coba lagi.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Verifikasi';
+    }
+}
+
+async function createOrder(telegramId, planType) {
+    const result = document.getElementById('orderResult');
+    const title = document.getElementById('orderTitle');
+    const message = document.getElementById('orderMessage');
+    const footer = document.getElementById('orderFooter');
 
     try {
         const res = await fetch('/api/order/create', {
@@ -246,61 +345,53 @@ async function handleSubmit(e) {
         });
         const data = await res.json();
 
-        const result = document.getElementById('orderResult');
-        const title = document.getElementById('orderTitle');
-        const message = document.getElementById('orderMessage');
-        const footer = document.getElementById('orderFooter');
         result.classList.remove('hidden');
+        document.getElementById('modalTitle').textContent = 'Selesai 🎉';
 
         if (data.snap_token) {
             title.textContent = '💳 Selesaikan Pembayaran';
             message.textContent = `Order: ${data.order_code} — Rp ${data.amount.toLocaleString('id-ID')}`;
             footer.textContent = 'Popup pembayaran akan muncul...';
-            btn.textContent = 'Buka Pembayaran';
-            btn.disabled = false;
 
             window.snap.pay(data.snap_token, {
                 onSuccess: function(res) {
                     title.textContent = '✅ Pembayaran Berhasil!';
                     message.textContent = `Order ${data.order_code} — langganan aktif.`;
-                    footer.innerHTML = 'Silakan buka <a href="https://t.me/{{ bot_username }}" target="_blank" class="text-accent font-semibold hover:underline">@{{ bot_username }}</a> di Telegram.';
-                    btn.style.display = 'none';
+                    footer.innerHTML = 'Buka <a href="/dashboard" class="text-accent font-semibold hover:underline">Dashboard</a> atau <a href="https://t.me/{{ bot_username }}" target="_blank" class="text-accent font-semibold hover:underline">@{{ bot_username }}</a>.';
                 },
                 onPending: function(res) {
                     title.textContent = '⏳ Menunggu Pembayaran';
-                    message.textContent = 'Pembayaran sedang diproses. Cek status nanti.';
-                    footer.textContent = '';
+                    message.textContent = 'Pembayaran sedang diproses.';
                 },
                 onError: function(res) {
                     title.textContent = '❌ Pembayaran Gagal';
-                    message.textContent = 'Silakan coba lagi atau pilih metode lain.';
-                    btn.textContent = 'Coba Lagi';
-                    btn.disabled = false;
+                    message.textContent = 'Silakan coba lagi.';
                 },
                 onClose: function() {
-                    if (!btn.style.display || btn.style.display !== 'none') {
+                    if (title.textContent.includes('Selesaikan')) {
                         title.textContent = '⚠️ Pembayaran Dibatalkan';
-                        message.textContent = 'Popup ditutup sebelum pembayaran selesai.';
-                        btn.textContent = 'Coba Lagi';
-                        btn.disabled = false;
+                        message.textContent = 'Popup ditutup sebelum selesai.';
                     }
                 }
             });
         } else {
             title.textContent = data.status === 'active' ? '🎉 Trial Aktif!' : '📋 Order Tersimpan';
             message.textContent = data.message;
-            footer.innerHTML = 'Langsung buka <a href="https://t.me/{{ bot_username }}" target="_blank" class="text-accent font-semibold hover:underline">@{{ bot_username }}</a> di Telegram.';
-            btn.style.display = 'none';
+            footer.innerHTML = 'Buka <a href="https://t.me/{{ bot_username }}" target="_blank" class="text-accent font-semibold hover:underline">@{{ bot_username }}</a> di Telegram.';
         }
     } catch (err) {
-        alert('Gagal membuat order. Coba lagi.');
-        btn.textContent = 'Buat Order';
-        btn.disabled = false;
+        title.textContent = '❌ Gagal';
+        message.textContent = 'Gagal membuat order. Coba lagi.';
     }
 }
 
 document.getElementById('orderModal').addEventListener('click', function(e) {
     if (e.target === this) closeModal();
+});
+
+// Allow Enter key in OTP field
+document.getElementById('otpCode').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') verifyOtp();
 });
 </script>
 
